@@ -66,7 +66,7 @@ from torch.utils.data import DataLoader
 from torchvision import models
 from tqdm import tqdm
 
-from utils import logger
+from utils.logger import logger
 
 
 def get_resnet_model(model_name: str) -> models.ResNet:
