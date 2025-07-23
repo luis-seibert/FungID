@@ -4,7 +4,6 @@ This module provides a dataset class for loading images from file paths with sup
 transformations and augmentations.
 """
 
-import os
 from typing import Any
 
 import cv2
@@ -20,9 +19,6 @@ from albumentations import (
 from albumentations.pytorch import ToTensorV2
 from torch import Tensor
 from torch.utils.data import Dataset
-
-# Default image dimensions for preprocessing
-DEFAULT_WIDTH, DEFAULT_HEIGHT = 299, 299
 
 
 class ImageDataset(Dataset):
@@ -45,41 +41,12 @@ class ImageDataset(Dataset):
 
     def __init__(
         self,
-        split_df: pd.DataFrame | None = None,
-        csv_file: str | None = None,
-        data_dir: str | None = None,
+        split_df: pd.DataFrame,
         transform: Any = None,
         target_transform: Any = None,
     ) -> None:
-        if split_df is not None:
-            self.image_labels = split_df["label_id"]
-            self.image_paths = split_df["image_path"]
-        elif csv_file is not None:
-            df = pd.read_csv(csv_file)
-            if "label" in df.columns:
-                self.image_labels = df["label"]
-            elif "label_id" in df.columns:
-                self.image_labels = df["label_id"]
-            else:
-                raise ValueError(
-                    "CSV file must contain either 'label' or 'label_id' column"
-                )
-
-            if "filename" in df.columns and data_dir is not None:
-                self.image_paths = df["filename"].apply(
-                    lambda x: os.path.join(data_dir, x)
-                )
-            elif "image_path" in df.columns:
-                self.image_paths = df["image_path"]
-            elif "filename" in df.columns:
-                self.image_paths = df["filename"]
-            else:
-                raise ValueError(
-                    "CSV file must contain either 'image_path' or 'filename' column"
-                )
-        else:
-            raise ValueError("Either split_df or csv_file must be provided")
-
+        self.image_labels = split_df["label_id"]
+        self.image_paths = split_df["image_path"]
         self.transform = transform
         self.target_transform = target_transform
 
@@ -104,10 +71,10 @@ class ImageDataset(Dataset):
             FileNotFoundError: If the image file cannot be read
         """
         image_path = self.image_paths.iloc[index]
-        image = cv2.imread(image_path)  # pylint: disable=E1101
+        image = cv2.imread(image_path)
         if image is None:
             raise FileNotFoundError(f"Could not read image: {image_path}")
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # pylint: disable=E1101
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         label = self.image_labels.iloc[index]
 
@@ -122,12 +89,12 @@ class ImageDataset(Dataset):
 
 
 def get_transforms(
-    image_size: tuple[int, int] | None = None, transform_type: str = "testing"
+    image_size: tuple[int, int] = (299, 299), transform_type: str = "testing"
 ) -> Compose:
     """Get image transformation pipeline.
 
     Args:
-        image_size (tuple[int, int] | None): Target image size as (width, height).
+        image_size (tuple[int, int]): Target image size as (width, height).
             Defaults to (299, 299) if not provided.
         transform_type (str): Type of transforms - "training" or "testing".
             Defaults to "testing".
@@ -138,11 +105,7 @@ def get_transforms(
     Raises:
         ValueError: If transform_type is not "training" or "testing"
     """
-    # Use default size if not provided
-    if image_size is None:
-        width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT
-    else:
-        width, height = image_size
+    width, height = image_size
 
     if transform_type == "training":
         return Compose(
