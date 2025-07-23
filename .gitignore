@@ -192,6 +192,13 @@ yarn-error.log*
 # Data files
 *.csv
 *.tsv
-.jpg
-.jpeg
-.png
+*.jpg
+*.jpeg
+*.png
+
+# Dataset files (downloaded separately)
+data/images/
+data/test_images/
+
+# Model checkpoints (large files)
+checkpoints/*.pth
