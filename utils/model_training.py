@@ -45,7 +45,7 @@ train_model(
     scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.1, patience=5
     ),
-    device="cuda" if torch.cuda.is_available() else "cpu",
+    device=get_device(),
     epochs=50,
     accumulation_steps=4,
     checkpoint_dir="checkpoints",
@@ -265,6 +265,15 @@ def train_model(
         "best_epoch": best_epoch,
         "checkpoint_dir": checkpoint_dir,
     }
+
+
+def get_device() -> torch.device:
+    """Get the device for PyTorch.
+
+    Returns:
+        torch.device: The device to use (CPU or GPU).
+    """
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def _prepare_images(images: torch.Tensor, device: torch.device | str) -> torch.Tensor:
