@@ -72,8 +72,10 @@ from utils.logger import logger
 def get_resnet_model(model_name: str) -> models.ResNet:
     """Returns a pre-trained ResNet model based on the specified model name.
 
+    The models selection is case-insensitive.
+
     Args:
-        model_name (str): Name of the ResNet model ('Resnet18', 'Resnet34', 'Resnet50')
+        model_name (str): Name of the ResNet model ('ResNet18', 'ResNet34', 'ResNet50')
 
     Returns:
         models.ResNet: Pre-trained ResNet model with ImageNet weights
@@ -81,11 +83,12 @@ def get_resnet_model(model_name: str) -> models.ResNet:
     Raises:
         ValueError: If the model name is not supported
     """
-    if model_name == "Resnet18":
+    name = model_name.lower()
+    if name == "resnet18":
         return models.resnet18(weights="IMAGENET1K_V1")
-    if model_name == "Resnet34":
+    if name == "resnet34":
         return models.resnet34(weights="IMAGENET1K_V1")
-    if model_name == "Resnet50":
+    if name == "resnet50":
         return models.resnet50(weights="IMAGENET1K_V1")
     raise ValueError(f"Model {model_name} is not supported.")
 
