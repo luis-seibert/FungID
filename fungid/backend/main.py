@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from fungid.backend.model_inference import image_classification
-from fungid.models import PredictionResponse
+from fungid.backend.models import PredictionResponse
 
 app = FastAPI(title="FungID API", description="Bitter bolete classifier demo")
 
