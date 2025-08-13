@@ -81,7 +81,7 @@ See `INSTALL.md` for details.
 
 ### Quick Inference
 ```python
-from utils.model_inference import image_classification
+from fungid.utils import image_classification
 
 result = image_classification(
     image_path="path/to/mushroom.jpg",
@@ -99,24 +99,27 @@ print(f"Confidence: {result['confidence']:.1%}")
 
 ```
 FungID/
+├── fungid/                         # Python package root
+│   ├── backend/                    # FastAPI application
+│   │   └── main.py                 # API entrypoint (uvicorn fungid.backend.main:app)
+│   └── utils/                      # Core utility modules
+│       ├── dataset_acquisition.py  # Data downloading and scraping
+│       ├── dataset_preparation.py  # Data splitting utilities
+│       ├── image_dataset.py        # PyTorch dataset and transforms
+│       ├── model_training.py       # Training loop and model utilities
+│       ├── model_inference.py      # Inference and prediction functions
+│       └── logger.py               # Logging configuration
 ├── 01_dataset_acquisition.ipynb    # Data collection and catalog processing
 ├── 02_dataset_preparation.ipynb    # Dataset splitting and preprocessing  
 ├── 03_model_training.ipynb         # Model training and optimization
 ├── 04_model_evaluation.ipynb       # Performance evaluation and metrics
 ├── 05_model_inference.ipynb        # Interactive classification interface
-├── utils/                          # Core utility modules
-│   ├── dataset_acquisition.py      # Data downloading and scraping
-│   ├── dataset_preparation.py      # Data splitting utilities
-│   ├── image_dataset.py           # PyTorch dataset and transforms
-│   ├── model_training.py          # Training loop and model utilities
-│   ├── model_inference.py         # Inference and prediction functions
-│   └── logger.py                  # Logging configuration
 ├── data/                           # Dataset and splits
 │   ├── images/                     # Raw mushroom images by species
-│   ├── *.csv                      # Train/validation/test splits
-│   └── *.tsv                      # Species catalogs and metadata
+│   ├── *.csv                       # Train/validation/test splits
+│   └── *.tsv                       # Species catalogs and metadata
 ├── checkpoints/                    # Model weights and training checkpoints
-└── requirements.txt               # Python dependencies
+└── requirements.txt                # Python dependencies
 ```
 
 ## Possible Future Improvements
