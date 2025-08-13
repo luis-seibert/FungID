@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>FungID | Bitter Bolete Classifier</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        :root {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+            color-scheme: light dark;
+        }
+
+        body {
+            margin: 0;
+            padding: 2rem;
+            max-width: 760px;
+            margin-inline: auto;
+            line-height: 1.4;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 1.8rem;
+        }
+
+        .card {
+            border: 1px solid #ccc;
+            border-radius: 12px;
+            padding: 1.25rem 1.5rem;
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(4px);
+        }
+
+        .dropzone {
+            border: 2px dashed #888;
+            padding: 1.5rem;
+            text-align: center;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background .2s, border-color .2s;
+        }
+
+        .dropzone.dragover {
+            background: #eef;
+            border-color: #339;
+        }
+
+        button {
+            cursor: pointer;
+            padding: .65rem 1.1rem;
+            font-size: .95rem;
+            border-radius: 8px;
+            border: 1px solid #444;
+            background: #222;
+            color: #fff;
+        }
+
+        button:disabled {
+            opacity: .5;
+            cursor: not-allowed;
+        }
+
+        #preview {
+            max-width: 200px;
+            margin-top: .75rem;
+            display: none;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+        }
+
+        .result {
+            margin-top: 1rem;
+            padding: .75rem 1rem;
+            background: #f5f5f5;
+            border-radius: 8px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            white-space: pre-wrap;
+        }
+
+        .error {
+            color: #b00020;
+            font-weight: 600;
+        }
+
+        footer {
+            margin-top: 3rem;
+            font-size: .75rem;
+            opacity: .7;
+            text-align: center;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #111;
+                color: #eee;
+            }
+
+            .card {
+                background: #1e1e1e;
+            }
+
+            .dropzone {
+                border-color: #555;
+            }
+
+            .result {
+                background: #222;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <h1>FungID | Bitter Bolete Classifier</h1>
+    <p>Select a mushroom image to predict whether it is the bitter bolete <i>Tylopilus felleus</i> or not.
+    </p>
+    <div class="card">
+        <div id="dropzone" class="dropzone">Drop image here or click to choose<br><small>(PNG / JPG, max ~5MB)</small>
+        </div>
+        <input id="fileInput" type="file" accept="image/*" style="display:none" />
+        <img id="preview" alt="preview" />
+        <div style="margin-top:1rem; display:flex; gap:.5rem;">
+            <button id="uploadBtn" disabled>Predict</button>
+            <button id="resetBtn" disabled type="button">Reset</button>
+        </div>
+        <div id="status" style="margin-top:.75rem; font-size:.85rem;"></div>
+        <div id="result" class="result" style="display:none"></div>
+    </div>
+    <footer>FungID demo • This is an early demo, use at own risk</footer>
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const preview = document.getElementById('preview');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const statusEl = document.getElementById('status');
+        const resultEl = document.getElementById('result');
+        let currentFile = null;
+
+        function setStatus(msg, isError = false) {
+            statusEl.textContent = msg || '';
+            statusEl.className = isError ? 'error' : '';
+        }
+
+        function humanConfidence(c) {
+            return (c * 100).toFixed(2) + '%';
+        }
+
+        function setFile(file) {
+            currentFile = file;
+            if (!file) {
+                preview.style.display = 'none';
+                uploadBtn.disabled = true; resetBtn.disabled = true; resultEl.style.display = 'none';
+                return;
+            }
+            const url = URL.createObjectURL(file);
+            preview.src = url; preview.style.display = 'block';
+            uploadBtn.disabled = false; resetBtn.disabled = false; resultEl.style.display = 'none';
+            setStatus('Ready to upload ' + file.name);
+        }
+
+        ['dragenter', 'dragover'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropzone.classList.add('dragover'); }));
+        ['dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); if (evt === 'drop') return; dropzone.classList.remove('dragover'); }));
+
+        dropzone.addEventListener('drop', e => {
+            dropzone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) validateAndSet(file);
+        });
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => { if (fileInput.files[0]) validateAndSet(fileInput.files[0]); });
+
+        function validateAndSet(file) {
+            if (!file.type.startsWith('image/')) { setStatus('Not an image.', true); return; }
+            if (file.size > 5 * 1024 * 1024) { setStatus('File too large (>5MB).', true); return; }
+            setFile(file);
+        }
+
+        uploadBtn.addEventListener('click', async () => {
+            if (!currentFile) return;
+            setStatus('Uploading & predicting...');
+            uploadBtn.disabled = true;
+            try {
+                const fd = new FormData();
+                fd.append('file', currentFile, currentFile.name);
+                const resp = await fetch('/predict', { method: 'POST', body: fd });
+                if (!resp.ok) { throw new Error('Server error ' + resp.status); }
+                const data = await resp.json();
+                if (data.error) { setStatus(data.error, true); return; }
+                const pretty = `Prediction: ${data.class_name}\nBitter: ${data.is_bitter ? 'Yes' : 'No'}\nConfidence: ${humanConfidence(data.confidence)}\nFile: ${data.filename}`;
+                resultEl.textContent = pretty; resultEl.style.display = 'block';
+                setStatus('Done');
+            } catch (err) {
+                setStatus(err.message, true);
+            } finally { uploadBtn.disabled = false; }
+        });
+
+        resetBtn.addEventListener('click', () => { fileInput.value = ''; setFile(null); setStatus(''); });
+    </script>
+</body>
+
+</html>
