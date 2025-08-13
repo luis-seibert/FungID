@@ -192,9 +192,6 @@ yarn-error.log*
 # Data files
 *.csv
 *.tsv
-*.jpg
-*.jpeg
-*.png
 
 # Dataset files (downloaded separately)
 data/images/
