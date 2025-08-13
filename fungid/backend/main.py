@@ -25,7 +25,7 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-MODEL_PATH = "checkpoints_old/ResNet18_best_model.pth"
+MODEL_PATH = "checkpoints/ResNet18_best_model.pth"
 MODEL_NAME = "ResNet18"
 NUMBER_CLASSES = 2
 CLASS_LABELS = {0: "Non-bitter Bolete (Edible)", 1: "Bitter Bolete (Unpalatable)"}
