@@ -1,8 +1,8 @@
-# FungID: Deep Learning for Mushroom Species Classification
+# FungID: Deep Learning & Explainable AI for Bitter Bolete Identification
 
-A computer vision project that uses deep learning to classify and identify mushroom species, specifically focused on distinguishing between edible and potentially bitter/inedible boletes. This project addresses an important food safety challenge by helping identify *Tylopilus felleus* (bitter bolete), which can render a meal inedible.
+FungID is a computer vision + FastAPI demo project that classifies bolete mushroom images and highlights the visual evidence the model used (Grad-CAM heatmaps). The primary safety task: distinguish edible boletes (*Boletus edulis*, *Imleria badia*) from the inedible, meal‑ruining bitter bolete (*Tylopilus felleus*).
 
-**Note**: This project is intended for educational and research purposes. Always consult mycological experts for definitive mushroom identification before consumption.
+> Educational / research use only. Do **not** rely on this as a sole source for edible mushroom decisions! Always consult qualified mycological references.
 
 ## Problem Statement
 
@@ -25,18 +25,21 @@ Misidentification can ruin a whole meal even if only a single small bitter bolet
 - **Split**: 70% training, 15% validation, 15% testing
 
 ### Model Architecture
-- **Base Model**: ResNet18 with ImageNet pre-trained weights
-- **Transfer Learning**: Fine-tuned final layers for binary classification
-- **Input**: 299×299 RGB images
-- **Output**: Binary classification (edible vs. bitter)
+- **Base Model**: ResNet18 (ImageNet pre-trained weights)
+- **Transfer Learning**: Final fully-connected layer replaced for 2 classes
+- **Input**: 299×299 RGB images (Albumentations preprocessing)
+- **Output**: Binary logits → softmax (edible vs. bitter)
+
+### Explainability (Grad-CAM)
+For every API prediction a Grad-CAM heatmap is generated over the final convolutional block (`layer4`) and alpha‑blended with the original image. Returned as a base64 PNG string. This enables quick trust/quality assessment and spotting failure modes (e.g. background bias).
 
 ### Training Strategy
-- **Loss Function**: CrossEntropyLoss
-- **Optimizer**: Adam with weight decay
-- **Batch Size**: 256 (with gradient accumulation)
-- **Learning Rate**: Adaptive with ReduceLROnPlateau
-- **Early Stopping**: Based on validation recall
-- **Metric Focus**: Recall optimization (minimize false negatives for safety)
+- **Loss**: CrossEntropyLoss
+- **Optimizer**: Adam (gradient accumulation to simulate large batch)
+- **Scheduler**: ReduceLROnPlateau (val loss)
+- **Selection Metric**: Validation Recall (maximize bitter bolete detection)
+- **Additional Metrics**: Accuracy, AUROC
+- **Checkpointing**: Per epoch + best (by recall)
 
 ## Results
 
@@ -48,9 +51,9 @@ The model achieves strong performance on the test set:
 
 *Detailed performance metrics and visualizations available in `04_model_evaluation.ipynb`*
 
-## Usage
+## Usage Overview
 
-See `INSTALL.md` for details.
+See `INSTALL.md` for environment setup. Below: notebook workflow, direct Python inference, and the web API.
 
 ### Running the Pipeline
 
@@ -79,61 +82,101 @@ See `INSTALL.md` for details.
    - Real-time prediction interface
    - Confidence scoring
 
-### Quick Inference
+### Quick Inference (Python API + Heatmap)
 ```python
-from fungid.utils import image_classification
+from fungid.backend.model_inference import image_classification
+
+CLASS_LABELS = {0: "Non-bitter Bolete (Edible)", 1: "Bitter Bolete (Unpalatable)"}
 
 result = image_classification(
-    image_path="path/to/mushroom.jpg",
-    model_path="checkpoints/ResNet18_best_model.pth",
-    model_name="ResNet18",
-    number_classes=2,
-    class_labels={0: "Edible Bolete", 1: "Bitter Bolete"}
+      image_path="path/to/mushroom.jpg",
+      model_path="checkpoints/ResNet18_best_model.pth",
+      model_name="ResNet18",
+      number_classes=2,
+      class_labels=CLASS_LABELS,
+      return_heatmap=True,
 )
 
-print(f"Prediction: {result['class_name']}")
-print(f"Confidence: {result['confidence']:.1%}")
+print(result["class_name"], f"{result['confidence']:.1%}")
+if "heatmap_overlay" in result:
+      # heatmap_overlay is a base64 PNG string
+      import base64, io, PIL.Image as Image
+      img = Image.open(io.BytesIO(base64.b64decode(result["heatmap_overlay"])))
+      img.show()
 ```
+
+### Running the FastAPI Server
+```bash
+uvicorn fungid.backend.main:app --reload --port 8000
+```
+Then open: http://localhost:8000/ (static demo UI) or http://localhost:8000/docs (OpenAPI docs).
+
+### HTTP Prediction Example
+```bash
+curl -X POST -F "file=@test_images/marone_01.jpg" http://localhost:8000/predict | jq
+```
+Example JSON (truncated):
+```json
+{
+   "class_name": "Non-bitter Bolete (Edible)",
+   "is_bitter": false,
+   "confidence": 0.9731,
+   "filename": "marone_01.jpg",
+   "heatmap_overlay": "iVBORw0KGgoAAA..."  
+}
+```
+
+### Web UI
+Drag & drop an image → side‑by‑side display: Original vs Grad‑CAM overlay.
+
+Screenshot preview:
+
+![Web UI Preview](fungid/backend/static/preview_screenshot.png)
 
 ## Project Structure
 
 ```
 FungID/
-├── fungid/                         # Python package root
-│   ├── backend/                    # FastAPI application
-│   │   └── main.py                 # API entrypoint (uvicorn fungid.backend.main:app)
-│   └── utils/                      # Core utility modules
-│       ├── dataset_acquisition.py  # Data downloading and scraping
-│       ├── dataset_preparation.py  # Data splitting utilities
-│       ├── image_dataset.py        # PyTorch dataset and transforms
-│       ├── model_training.py       # Training loop and model utilities
-│       ├── model_inference.py      # Inference and prediction functions
-│       └── logger.py               # Logging configuration
-├── 01_dataset_acquisition.ipynb    # Data collection and catalog processing
-├── 02_dataset_preparation.ipynb    # Dataset splitting and preprocessing  
-├── 03_model_training.ipynb         # Model training and optimization
-├── 04_model_evaluation.ipynb       # Performance evaluation and metrics
-├── 05_model_inference.ipynb        # Interactive classification interface
-├── data/                           # Dataset and splits
-│   ├── images/                     # Raw mushroom images by species
-│   ├── *.csv                       # Train/validation/test splits
-│   └── *.tsv                       # Species catalogs and metadata
-├── checkpoints/                    # Model weights and training checkpoints
-└── requirements.txt                # Python dependencies
+├── fungid/                               # Package
+│   ├── backend/                          # FastAPI backend + static UI
+│   │   ├── main.py                       # API entrypoint
+│   │   ├── model_inference.py            # Inference + Grad-CAM (API version)
+│   │   ├── models.py                     # Pydantic response schemas
+│   │   └── static/
+│   │       ├── index.html                # Minimal drag & drop web client
+│   │       └── preview_screenshot.png    # (Add manually) UI preview image
+├── utils/                                # Core training & classic inference utilities
+│   ├── dataset_acquisition.py            # Data downloading and scraping
+│   ├── dataset_preparation.py            # Data splitting utilities
+│   ├── image_dataset.py                  # PyTorch dataset and transforms
+│   ├── model_training.py                 # Training loop and model utilities
+│   ├── model_inference.py                # (original inference helper, no heatmap)
+│   └── logger.py                         # Logging configuration
+├── checkpoints/                          # Saved epoch + best model weights
+├── data/                                 # CSV splits, images, metadata
+├── 01_dataset_acquisition.ipynb
+├── 02_dataset_preparation.ipynb
+├── 03_model_training.ipynb
+├── 04_model_evaluation.ipynb
+├── 05_model_inference.ipynb
+├── requirements.txt
+├── INSTALL.md
+└── README.md
 ```
 
 ## Possible Future Improvements
 
-- Expand to multi-class classification with more species
-- Implement ensemble methods for improved robustness
-- Add explainability features (GradCAM, LIME)
-- Mobile deployment for field use
-- Integration with geographic/seasonal data
+- Multi-class expansion (more bolete + non-bolete species)
+- Additional explanation methods (e.g., Score-CAM, LIME, Integrated Gradients)
+- Lightweight mobile / on-device (CoreML / TFLite) deployment
+- Active learning loop (flag low-confidence images for manual labeling)
+- Incorporate contextual metadata (location, season) for re-ranking
 
 ## Acknowledgments
 
-- [MushroomObserver](https://mushroomobserver.org/) community for providing the dataset
-- ImageNet pre-trained models for transfer learning foundation
-- PyTorch ecosystem for deep learning framework
+- [MushroomObserver](https://mushroomobserver.org/) community dataset
+- PyTorch & TorchVision (ResNet weights)
+- Albumentations for fast image augmentations
+- FastAPI + Uvicorn for serving predictions & explainability
 
 ---

@@ -19,10 +19,16 @@
    pip install -r requirements.txt
    ```
 
-4. **Run the notebooks**
+4. **(Option A) Run the notebooks**
    ```bash
    jupyter lab
    ```
+
+5. **(Option B) Launch the FastAPI server (with Grad-CAM heatmaps)**
+   ```bash
+   uvicorn fungid.backend.main:app --reload --port 8000
+   ```
+   Open http://localhost:8000/ for the drag & drop UI, or http://localhost:8000/docs for the OpenAPI schema.
 
 ## Hardware Requirements
 
@@ -30,9 +36,11 @@
 
 ## Dataset Download
 
-The project uses the MushroomObserver dataset. The data acquisition notebook (`01_dataset_acquisition.ipynb`) will automatically download the required data when executed.
+The project uses community-sourced images from MushroomObserver. Run `01_dataset_acquisition.ipynb` to build the local catalog and download filtered species.
 
-**Note**: The complete image dataset is approximately 250 MB. The download process may take 60-90 minutes.
+Notes:
+- Approximate size: ~250 MB (depends on filtering)
+- Total elapsed scrape time: 60–90 minutes (network dependent)
 
 ## GPU Setup (Optional)
 
@@ -65,16 +73,30 @@ For GPU acceleration:
    - Ensure all packages from requirements.txt are installed
    - Update pip: `pip install --upgrade pip`
 
-## Project Structure
-
-After setup, your directory should look like:
+## Project Structure (Condensed)
 
 ```
 FungID/
-├── data/                 # Dataset (downloaded automatically)
-├── checkpoints/         # Model weights (created during training)
-├── utils/              # Core functionality
-├── *.ipynb            # Jupyter notebooks
-├── requirements.txt   # Dependencies
-└── README.md         # Main documentation
+├── fungid/
+│   ├── backend/            # FastAPI + static UI (Grad-CAM enabled)
+├── utils/                  # Training & classic inference utilities
+├── data/                   # CSV splits, images (after acquisition)
+├── checkpoints/            # Saved model weights
+├── 01..05_*.ipynb          # End-to-end workflow notebooks
+├── requirements.txt
+├── INSTALL.md
+└── README.md
+```
+
+> Add `fungid/backend/static/preview_screenshot.png` manually if you want a README UI preview.
+
+## Grad-CAM Output
+
+Every prediction via `/predict` returns a `heatmap_overlay` base64 string (PNG). The web UI renders a side‑by‑side original vs. overlay comparison.
+
+To decode programmatically:
+```python
+import base64, io
+from PIL import Image
+img = Image.open(io.BytesIO(base64.b64decode(heatmap_overlay)))
 ```
