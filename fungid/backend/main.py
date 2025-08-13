@@ -81,6 +81,7 @@ async def predict_bitter_bolete(file: UploadFile = File(...)) -> PredictionRespo
             MODEL_NAME,
             NUMBER_CLASSES,
             CLASS_LABELS,
+            return_heatmap=True,
         )
     except HTTPException:
         raise
@@ -103,4 +104,6 @@ async def predict_bitter_bolete(file: UploadFile = File(...)) -> PredictionRespo
         confidence=classification_result["confidence"],
         filename=file.filename
         or os.path.basename(classification_result.get("filename", "uploaded_image")),
+        heatmap_overlay=classification_result.get("heatmap_overlay"),
+        heatmap_error=classification_result.get("heatmap_error"),
     )

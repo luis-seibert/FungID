@@ -14,11 +14,14 @@ result = image_classification(
 print(result)
 ```"""
 
+import base64
 import os
 from typing import Any
 
 import cv2
+import numpy as np
 import torch
+import torch.nn.functional as F
 from albumentations import (
     Compose,
     HorizontalFlip,
@@ -38,8 +41,10 @@ def image_classification(
     model_name: str,
     number_classes: int,
     class_labels: dict[int, str],
+    return_heatmap: bool = True,
+    heatmap_alpha: float = 0.45,
 ) -> dict[str, Any]:
-    """Run image classification from selected file.
+    """Run image classification from selected file, optionally returning a Grad-CAM heatmap.
 
     Args:
         image_path (str): Path to the image file.
@@ -47,15 +52,17 @@ def image_classification(
         model_name (str): Name of the model architecture to load.
         number_classes (int): Number of classes for the model.
         class_labels (dict[int, str]): Mapping of class indices to class names.
+        return_heatmap (bool): Whether to compute and return a Grad-CAM heatmap overlay (base64 PNG).
+        heatmap_alpha (float): Alpha blend factor (0-1) for overlay between original image and heatmap.
 
     Returns:
-        dict[str, Any]: Classification results.
+        dict[str, Any]: Classification results (and heatmap if requested).
 
     Raises:
         ValueError: If the predicted class is not found in the class labels.
     """
-    image = _read_image(image_path)
-    tensor = _get_tensor(image)
+    original_image = _read_image(image_path)
+    tensor = _get_tensor(original_image)
     model = _initialize_model(model_path, model_name, number_classes)
 
     with torch.no_grad():
@@ -69,7 +76,7 @@ def image_classification(
             f"Predicted class '{predicted_class}' not found in class labels."
         )
 
-    return {
+    result: dict[str, Any] = {
         "filename": os.path.basename(image_path),
         "predicted_class": predicted_class,
         "class_name": class_labels[int(predicted_class)],
@@ -80,6 +87,17 @@ def image_classification(
             "bitter": probabilities[0][1].item(),
         },
     }
+
+    if return_heatmap:
+        try:
+            heatmap_overlay_b64 = _generate_gradcam_overlay(
+                model, tensor, predicted_class, original_image, alpha=heatmap_alpha
+            )
+            result["heatmap_overlay"] = heatmap_overlay_b64
+        except Exception as e:  # pragma: no cover - fail gracefully
+            result["heatmap_error"] = f"Failed to generate heatmap: {e}"  # debug aid
+
+    return result
 
 
 def _get_tensor(image: Any) -> Any:
@@ -230,3 +248,87 @@ def _get_device() -> torch.device:
         torch.device: The device to use (CPU or GPU).
     """
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def _generate_gradcam_overlay(
+    model: nn.Module,
+    input_tensor: torch.Tensor,
+    class_idx: int,
+    original_image: Any,
+    target_layer_name: str = "layer4",
+    alpha: float = 0.45,
+) -> str:
+    """Generate a Grad-CAM overlay (base64 PNG) for the predicted class.
+
+    Args:
+        model (nn.Module): Loaded classification model (in eval mode).
+        input_tensor (torch.Tensor): Input image tensor (1, C, H, W).
+        class_idx (int): Target class index for CAM.
+        original_image (Any): Original RGB image array (H, W, 3) uint8.
+        target_layer_name (str): Name of the layer to hook (default: 'layer4').
+        alpha (float): Blend factor for overlay.
+
+    Returns:
+        str: Base64-encoded PNG of overlay image.
+    """
+    model.zero_grad()
+    # Enable gradient for the forward pass used for CAM
+    input_tensor = input_tensor.requires_grad_(True)
+
+    activations: dict[str, torch.Tensor] = {}
+    gradients: dict[str, torch.Tensor] = {}
+
+    # Resolve target layer
+    named_modules = dict(model.named_modules())
+    if target_layer_name not in named_modules:
+        raise ValueError(f"Target layer '{target_layer_name}' not found in model.")
+    target_layer = named_modules[target_layer_name]
+
+    def fwd_hook(_, __, output):
+        activations["value"] = output.detach()
+
+    def bwd_hook(_, grad_input, grad_output):  # grad_output is a tuple
+        gradients["value"] = grad_output[0].detach()
+
+    forward_handle = target_layer.register_forward_hook(fwd_hook)
+    backward_handle = target_layer.register_full_backward_hook(bwd_hook)  # PyTorch >=2
+
+    # Forward pass (with grads)
+    outputs = model(input_tensor)
+    if not (0 <= class_idx < outputs.shape[1]):
+        raise ValueError("Class index out of range for model outputs.")
+    score = outputs[:, class_idx]
+    score.backward()
+
+    # Remove hooks
+    forward_handle.remove()
+    backward_handle.remove()
+
+    if "value" not in activations or "value" not in gradients:
+        raise RuntimeError("Failed to capture activations/gradients for Grad-CAM.")
+
+    acts = activations["value"]  # (1, C, H, W)
+    grads = gradients["value"]  # (1, C, H, W)
+    weights = grads.mean(dim=(2, 3), keepdim=True)  # (1, C, 1, 1)
+    cam = (weights * acts).sum(dim=1)  # (1, H, W)
+    cam = F.relu(cam)
+    # Normalize
+    cam -= cam.min()
+    cam /= cam.max() + 1e-8
+    cam_np = cam[0].cpu().numpy()
+
+    # Resize CAM to original image size
+    h, w, _ = original_image.shape
+    cam_resized = cv2.resize(cam_np, (w, h))
+    heatmap = cv2.applyColorMap((cam_resized * 255).astype(np.uint8), cv2.COLORMAP_JET)
+    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+    overlay = (
+        (alpha * heatmap + (1 - alpha) * original_image).clip(0, 255).astype(np.uint8)
+    )
+
+    # Encode to base64 PNG
+    success, buffer = cv2.imencode(".png", cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+    if not success:
+        raise RuntimeError("Failed to encode heatmap overlay to PNG.")
+    b64 = base64.b64encode(buffer.tobytes()).decode("utf-8")
+    return b64

@@ -78,6 +78,33 @@
             white-space: pre-wrap;
         }
 
+        .comparison {
+            margin-top: 1.25rem;
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .comparison figure {
+            margin: 0;
+            flex: 1 1 260px;
+            max-width: 360px;
+        }
+
+        .comparison img {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.25);
+        }
+
+        .comparison figcaption {
+            margin-top: .35rem;
+            font-size: .8rem;
+            opacity: .75;
+        }
+
         .error {
             color: #b00020;
             font-weight: 600;
@@ -126,6 +153,16 @@
         </div>
         <div id="status" style="margin-top:.75rem; font-size:.85rem;"></div>
         <div id="result" class="result" style="display:none"></div>
+        <div id="comparison" class="comparison" style="display:none">
+            <figure>
+                <img id="originalDisplay" alt="original" />
+                <figcaption>Original</figcaption>
+            </figure>
+            <figure>
+                <img id="heatmapDisplay" alt="prediction heatmap overlay" />
+                <figcaption>Grad-CAM Overlay</figcaption>
+            </figure>
+        </div>
     </div>
     <footer>FungID demo • This is an early demo, use at own risk</footer>
     <script>
@@ -136,6 +173,9 @@
         const resetBtn = document.getElementById('resetBtn');
         const statusEl = document.getElementById('status');
         const resultEl = document.getElementById('result');
+    const comparisonEl = document.getElementById('comparison');
+    const originalDisplay = document.getElementById('originalDisplay');
+    const heatmapDisplay = document.getElementById('heatmapDisplay');
         let currentFile = null;
 
         function setStatus(msg, isError = false) {
@@ -152,11 +192,13 @@
             if (!file) {
                 preview.style.display = 'none';
                 uploadBtn.disabled = true; resetBtn.disabled = true; resultEl.style.display = 'none';
+                comparisonEl.style.display = 'none';
                 return;
             }
             const url = URL.createObjectURL(file);
             preview.src = url; preview.style.display = 'block';
             uploadBtn.disabled = false; resetBtn.disabled = false; resultEl.style.display = 'none';
+            comparisonEl.style.display = 'none';
             setStatus('Ready to upload ' + file.name);
         }
 
@@ -192,6 +234,15 @@
                 const pretty = `Prediction: ${data.class_name}\nBitter: ${data.is_bitter ? 'Yes' : 'No'}\nConfidence: ${humanConfidence(data.confidence)}\nFile: ${data.filename}`;
                 resultEl.textContent = pretty; resultEl.style.display = 'block';
                 setStatus('Done');
+
+                // Populate comparison images
+                originalDisplay.src = preview.src;
+                if (data.heatmap_overlay) {
+                    heatmapDisplay.src = 'data:image/png;base64,' + data.heatmap_overlay;
+                    comparisonEl.style.display = 'flex';
+                } else {
+                    comparisonEl.style.display = 'none';
+                }
             } catch (err) {
                 setStatus(err.message, true);
             } finally { uploadBtn.disabled = false; }
